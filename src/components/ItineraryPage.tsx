@@ -7,10 +7,10 @@ import {
   Star,
   Download,
   ChevronRight,
-  MapPin,
 } from "lucide-react";
 import { useAppDispatch, useAppSelector } from "../store/hooks";
 import { fetchExperiencesByIds } from "../store/thunks";
+import { Availability } from "../store/slices/experiencesSlice";
 
 interface Attraction {
   id: string;
@@ -31,17 +31,6 @@ interface FormData {
   children: number;
   infants: number;
   seniors: number;
-}
-
-interface Experience {
-  id: string;
-  name: string;
-  description: string;
-  image: string;
-  duration: string;
-  price: string;
-  timeSlot: string;
-  category: "Morning" | "Afternoon" | "Evening";
 }
 
 interface ItineraryExperience {
@@ -117,39 +106,67 @@ function ItineraryPage() {
   const [email, setEmail] = useState("");
 
   useEffect(() => {
-    // Load form data (original form data for dates and travelers)
+    // Load all data from the single itineraryData localStorage key
     const storedData = localStorage.getItem("itineraryData");
+
     if (storedData) {
-      const data = JSON.parse(storedData);
-      setFormData(data);
-    }
+      const parsedData = JSON.parse(storedData);
 
-    // Load itinerary data
-    const storedItinerary = localStorage.getItem("itinerary");
-    if (storedItinerary) {
-      const itinerary = JSON.parse(storedItinerary);
-      setItineraryData(itinerary);
+      // Extract form data (attractions, dates, travelers, etc.)
+      const formDataPart: FormData = {
+        attractions: parsedData.attractions || [],
+        startDate: parsedData.startDate || "",
+        endDate: parsedData.endDate || "",
+        adults: parsedData.adults || 0,
+        children: parsedData.children || 0,
+        infants: parsedData.infants || 0,
+        seniors: parsedData.seniors || 0,
+      };
+      setFormData(formDataPart);
 
-      // Extract all experience IDs from the itinerary
-      const experienceIds: string[] = [];
-      const itineraryObj = itinerary.itinerary;
+      // Extract AI-generated itinerary data
+      if (parsedData.aiItinerary && parsedData.aiItinerary.itinerary) {
+        // Wrap the itinerary data to match the expected ItineraryData interface
+        setItineraryData({ itinerary: parsedData.aiItinerary.itinerary });
 
-      Object.keys(itineraryObj).forEach((dayKey) => {
-        if (dayKey.startsWith("day")) {
-          const day = itineraryObj[dayKey];
-          ["morning", "afternoon", "evening"].forEach((timeSlot) => {
-            if (day[timeSlot]?.experienceId) {
-              experienceIds.push(day[timeSlot].experienceId.toString());
+        // Extract all experience IDs from the itinerary
+        const experienceIds: string[] = [];
+        const itineraryObj = parsedData.aiItinerary.itinerary;
+
+        if (itineraryObj) {
+          Object.keys(itineraryObj).forEach((dayKey) => {
+            if (dayKey.startsWith("day")) {
+              const day = itineraryObj[dayKey];
+              ["morning", "afternoon", "evening"].forEach((timeSlot) => {
+                if (day[timeSlot]?.experienceId) {
+                  experienceIds.push(day[timeSlot].experienceId.toString());
+                }
+              });
             }
           });
-        }
-      });
 
-      // Fetch experience details
-      if (experienceIds.length > 0) {
-        dispatch(fetchExperiencesByIds(experienceIds));
+          // Fetch experience details with date parameters
+          if (experienceIds.length > 0) {
+            if (formDataPart.startDate && formDataPart.endDate) {
+              dispatch(
+                fetchExperiencesByIds(
+                  experienceIds,
+                  formDataPart.startDate,
+                  formDataPart.endDate
+                )
+              );
+            } else {
+              // Fallback to default behavior if dates are not available
+              dispatch(fetchExperiencesByIds(experienceIds));
+            }
+          }
+        }
+      } else {
+        console.warn("No valid AI itinerary found in stored data");
+        // Could show a fallback message or redirect
       }
     } else {
+      console.warn("No itinerary data found in localStorage");
       navigate("/");
     }
   }, [navigate, dispatch]);
@@ -159,6 +176,16 @@ function ItineraryPage() {
       generateDayPlans(formData, itineraryData);
     }
   }, [formData, itineraryData]);
+
+  // Helper function to check if an experience is valid (not empty)
+  const isValidExperience = (
+    experience: ItineraryExperience | undefined
+  ): boolean => {
+    if (!experience) return false;
+
+    // Check if experience has valid data (not empty/zero values)
+    return experience.experienceId > 0;
+  };
 
   const generateDayPlans = (data: FormData, itinerary: ItineraryData) => {
     const plans: DayPlan[] = [];
@@ -209,8 +236,263 @@ function ItineraryPage() {
     return experiences.find((exp) => exp.id === experienceId.toString());
   };
 
+  // Helper function to extract start time from timeSlot
+  const extractStartTime = (timeSlot: string): string => {
+    // Handle various time formats:
+    // "09:00 - 11:00", "9:00AM - 11:00AM", "09:00-11:00", "Morning (09:00-11:00)", etc.
+
+    // Remove any parentheses and extra text, focus on the time part
+    let cleanTimeSlot = timeSlot.replace(/[()]/g, "").trim();
+
+    // Split by common separators to get start time
+    const separators = [" - ", "-", " to ", " till ", "–", "—"];
+    let startTime = cleanTimeSlot;
+
+    for (const separator of separators) {
+      if (cleanTimeSlot.includes(separator)) {
+        startTime = cleanTimeSlot.split(separator)[0].trim();
+        break;
+      }
+    }
+
+    // Remove any non-time text (like "Morning", "Afternoon", etc.)
+    const timeMatch = startTime.match(/\d{1,2}:?\d{0,2}\s*(?:AM|PM|am|pm)?/);
+    if (timeMatch) {
+      startTime = timeMatch[0];
+    }
+
+    // Normalize time format to HH:MM
+    if (startTime.includes(":")) {
+      let [hours, minutes] = startTime.split(":");
+      hours = hours.padStart(2, "0");
+      minutes = (minutes || "00").replace(/[^\d]/g, "").padStart(2, "0");
+
+      // Handle AM/PM
+      if (startTime.toUpperCase().includes("PM") && parseInt(hours) !== 12) {
+        hours = (parseInt(hours) + 12).toString();
+      } else if (
+        startTime.toUpperCase().includes("AM") &&
+        parseInt(hours) === 12
+      ) {
+        hours = "00";
+      }
+
+      return `${hours}:${minutes}`;
+    } else {
+      // Handle cases like "9AM", "10PM"
+      const match = startTime.match(/(\d{1,2})\s*(AM|PM|am|pm)?/);
+      if (match) {
+        let hours = parseInt(match[1]);
+        const period = match[2]?.toUpperCase();
+
+        if (period === "PM" && hours !== 12) {
+          hours += 12;
+        } else if (period === "AM" && hours === 12) {
+          hours = 0;
+        }
+
+        return `${hours.toString().padStart(2, "0")}:00`;
+      }
+    }
+
+    return startTime;
+  };
+
+  // Helper function to calculate experience date based on start date and day number
+  const calculateExperienceDate = (
+    startDate: string,
+    dayNumber: number
+  ): string => {
+    const date = new Date(startDate);
+    date.setDate(date.getDate() + (dayNumber - 1)); // dayNumber is 1-based
+    return date.toISOString().split("T")[0]; // Return YYYY-MM-DD format
+  };
+
+  // Helper function to match time strings with various formats
+  const timeMatches = (time1: string, time2: string): boolean => {
+    const normalize = (time: string): string => {
+      // Extract time from various formats and normalize to HH:MM
+      const timeMatch = time.match(/\d{1,2}:?\d{0,2}\s*(?:AM|PM|am|pm)?/);
+      if (!timeMatch) return time;
+
+      let timeStr = timeMatch[0];
+
+      if (timeStr.includes(":")) {
+        let [hours, minutes] = timeStr.split(":");
+        hours = hours.padStart(2, "0");
+        minutes = (minutes || "00").replace(/[^\d]/g, "").padStart(2, "0");
+
+        // Handle AM/PM
+        if (timeStr.toUpperCase().includes("PM") && parseInt(hours) !== 12) {
+          hours = (parseInt(hours) + 12).toString();
+        } else if (
+          timeStr.toUpperCase().includes("AM") &&
+          parseInt(hours) === 12
+        ) {
+          hours = "00";
+        }
+
+        return `${hours}:${minutes}`;
+      } else {
+        // Handle cases like "9AM", "10PM"
+        const match = timeStr.match(/(\d{1,2})\s*(AM|PM|am|pm)?/);
+        if (match) {
+          let hours = parseInt(match[1]);
+          const period = match[2]?.toUpperCase();
+
+          if (period === "PM" && hours !== 12) {
+            hours += 12;
+          } else if (period === "AM" && hours === 12) {
+            hours = 0;
+          }
+
+          return `${hours.toString().padStart(2, "0")}:00`;
+        }
+      }
+
+      return timeStr;
+    };
+
+    return normalize(time1) === normalize(time2);
+  };
+
+  // Helper function to get price for an experience
+  const getExperiencePrice = (
+    experience: ItineraryExperience,
+    dayNumber: number
+  ): string => {
+    if (!formData) return "Price unavailable";
+
+    const experienceDetails = getExperienceDetails(experience.experienceId);
+    if (!experienceDetails || !experienceDetails.inventory) {
+      return "Price unavailable";
+    }
+
+    // TODO: Replace this index-based approach with actual variantId matching
+    // In future: find variant where variant.id === experience.variantId
+    let variant = experienceDetails.variants[experience.variantId];
+
+    // Fallback to first variant if the specified index is out of range or variant not found
+    if (!variant && experienceDetails.variants.length > 0) {
+      variant = experienceDetails.variants[0];
+    }
+
+    if (!variant) return "Price unavailable";
+
+    // Get the tour ID (using the first tour for now, this might need refinement)
+    const tourId = variant.tours?.[0]?.id?.toString();
+    if (!tourId || !experienceDetails.inventory[tourId]) {
+      return "Price unavailable";
+    }
+
+    // Calculate the experience date
+    const experienceDate = calculateExperienceDate(
+      formData.startDate,
+      dayNumber
+    );
+    const dateInventory = experienceDetails.inventory[tourId][experienceDate];
+
+    if (!dateInventory || !Array.isArray(dateInventory)) {
+      return "Price unavailable";
+    }
+
+    // Extract start time from timeSlot
+    const startTime = extractStartTime(experience.timeSlot);
+
+    // Find the availability with matching start time
+    let matchingAvailability = dateInventory.find(
+      (availability: Availability) =>
+        timeMatches(availability.startTime, startTime)
+    );
+
+    // If no exact match found, use the first available slot of that day
+    if (!matchingAvailability && dateInventory.length > 0) {
+      matchingAvailability = dateInventory[0];
+    }
+
+    if (!matchingAvailability || !matchingAvailability.priceProfile) {
+      return "Price unavailable";
+    }
+
+    // Get the price from the first person in the price profile
+    const firstPerson = matchingAvailability.priceProfile.persons?.[0];
+    if (!firstPerson) {
+      return "Price unavailable";
+    }
+
+    const currency = experienceDetails.currency || "USD";
+    const price = firstPerson.listingPrice || firstPerson.retailPrice || 0;
+
+    return `${getCurrencySymbol(currency)}${price.toFixed(0)}`;
+  };
+
   const getTotalTravelers = (data: FormData) => {
     return data.adults + data.children + data.infants + data.seniors;
+  };
+
+  // Helper function to get currency symbol
+  const getCurrencySymbol = (currency: string): string => {
+    switch (currency) {
+      case "USD":
+        return "$";
+      case "EUR":
+        return "EUR ";
+      case "GBP":
+        return "£";
+      default:
+        return currency;
+    }
+  };
+
+  // Helper function to calculate total trip cost
+  const calculateTripCost = () => {
+    if (!formData || !itineraryData) return null;
+
+    let totalCost = 0;
+    const totalTravelers = getTotalTravelers(formData);
+    let currency = "USD"; // Default fallback
+
+    // Calculate cost for all experiences across all days
+    dayPlans.forEach((dayPlan) => {
+      const { morning, afternoon, evening } = dayPlan.experiences;
+
+      [morning, afternoon, evening].forEach((experience) => {
+        if (isValidExperience(experience) && experience) {
+          // Get currency from the first valid experience
+          if (currency === "USD") {
+            const experienceDetails = getExperienceDetails(
+              experience.experienceId
+            );
+            if (experienceDetails?.currency) {
+              currency = experienceDetails.currency;
+            }
+          }
+
+          const priceStr = getExperiencePrice(experience, dayPlan.day);
+          // Extract numeric value from price string (e.g., "€45" -> 45 or "$45" -> 45)
+          const priceMatch = priceStr.match(/\d+/);
+          if (priceMatch) {
+            const pricePerPerson = parseInt(priceMatch[0]);
+            totalCost += pricePerPerson * totalTravelers;
+          }
+        }
+      });
+    });
+
+    // Apply 10% discount
+    const discountAmount = totalCost * 0.1;
+    const discountedTotal = totalCost - discountAmount;
+    const pricePerPerson =
+      totalTravelers > 0 ? discountedTotal / totalTravelers : 0;
+
+    return {
+      originalTotal: totalCost,
+      discountAmount: discountAmount,
+      discountedTotal: discountedTotal,
+      pricePerPerson: pricePerPerson,
+      currency: currency,
+      totalTravelers: totalTravelers,
+    };
   };
 
   const handleSendItinerary = () => {
@@ -223,9 +505,11 @@ function ItineraryPage() {
 
   const renderExperienceCard = (
     experience: ItineraryExperience,
-    timeSlotName: string
+    timeSlotName: string,
+    dayNumber: number
   ) => {
     const experienceDetails = getExperienceDetails(experience.experienceId);
+    const price = getExperiencePrice(experience, dayNumber);
 
     return (
       <div key={`${timeSlotName}-${experience.experienceId}`} className="mb-6">
@@ -256,7 +540,7 @@ function ItineraryPage() {
             </div>
           </div>
           <div className="text-right">
-            <div className="text-lg font-bold text-gray-900">$2</div>
+            <div className="text-lg font-bold text-gray-900">{price}</div>
           </div>
         </div>
       </div>
@@ -339,15 +623,15 @@ function ItineraryPage() {
   return (
     <div className="min-h-screen bg-white">
       {/* Hero Section */}
-      <div className="relative h-64 bg-gradient-to-b from-gray-900/50 to-gray-900/70">
+      <div className="relative h-48 bg-gradient-to-b from-gray-900/50 to-gray-900/70">
         <img
-          src="https://images.pexels.com/photos/338515/pexels-photo-338515.jpeg?auto=compress&cs=tinysrgb&w=800"
+          src="https://media.istockphoto.com/id/635758088/photo/sunrise-at-the-eiffel-tower-in-paris-along-the-seine.jpg?s=612x612&w=0&k=20&c=rdy3aU1CDyh66mPyR5AAc1yJ0yEameR_v2vOXp2uuMM="
           alt="Paris skyline"
-          className="absolute inset-0 w-full h-full object-cover -z-10"
+          className="absolute inset-0 w-full h-full object-cover z-0"
         />
-        <div className="absolute inset-0 bg-black/40"></div>
+        <div className="absolute inset-0 bg-black/40 z-10"></div>
 
-        <div className="relative h-full flex flex-col justify-center items-center text-white px-4">
+        <div className="relative h-full flex flex-col justify-center items-center text-white px-4 z-20">
           <button
             onClick={() => navigate("/")}
             className="absolute top-4 left-4 p-2 rounded-full bg-black/20 hover:bg-black/40 transition-colors"
@@ -357,21 +641,6 @@ function ItineraryPage() {
 
           <h1 className="text-3xl font-bold mb-2">PARIS</h1>
           <p className="text-lg opacity-90">A trip designed just for you</p>
-
-          <div className="mt-4 flex items-center space-x-4 text-sm">
-            <span>
-              Detailed {dayPlans.length} day Paris itinerary with must do
-              experiences
-            </span>
-            <div className="flex space-x-2">
-              <div className="w-6 h-6 bg-white/20 rounded-full flex items-center justify-center">
-                <MapPin className="w-3 h-3" />
-              </div>
-              <div className="w-6 h-6 bg-white/20 rounded-full flex items-center justify-center">
-                <Star className="w-3 h-3" />
-              </div>
-            </div>
-          </div>
         </div>
       </div>
 
@@ -437,18 +706,19 @@ function ItineraryPage() {
                   <div>
                     <h3 className="font-semibold text-gray-900">Morning</h3>
                     <p className="text-sm text-gray-500">
-                      {currentDayPlan.experiences.morning
-                        ? `${currentDayPlan.experiences.morning.timeSlot} • 1 experience`
+                      {isValidExperience(currentDayPlan.experiences.morning)
+                        ? `${currentDayPlan.experiences.morning?.timeSlot} • 1 experience`
                         : "Free time"}
                     </p>
                   </div>
                 </div>
                 <ChevronRight className="w-4 h-4 text-gray-400" />
               </div>
-              {currentDayPlan.experiences.morning
+              {isValidExperience(currentDayPlan.experiences.morning)
                 ? renderExperienceCard(
-                    currentDayPlan.experiences.morning,
-                    "morning"
+                    currentDayPlan.experiences.morning!,
+                    "morning",
+                    currentDayPlan.day
                   )
                 : renderFreeTimeSlot("morning")}
             </div>
@@ -463,18 +733,19 @@ function ItineraryPage() {
                   <div>
                     <h3 className="font-semibold text-gray-900">Afternoon</h3>
                     <p className="text-sm text-gray-500">
-                      {currentDayPlan.experiences.afternoon
-                        ? `${currentDayPlan.experiences.afternoon.timeSlot} • 1 experience`
+                      {isValidExperience(currentDayPlan.experiences.afternoon)
+                        ? `${currentDayPlan.experiences.afternoon?.timeSlot} • 1 experience`
                         : "Free time"}
                     </p>
                   </div>
                 </div>
                 <ChevronRight className="w-4 h-4 text-gray-400" />
               </div>
-              {currentDayPlan.experiences.afternoon
+              {isValidExperience(currentDayPlan.experiences.afternoon)
                 ? renderExperienceCard(
-                    currentDayPlan.experiences.afternoon,
-                    "afternoon"
+                    currentDayPlan.experiences.afternoon!,
+                    "afternoon",
+                    currentDayPlan.day
                   )
                 : renderFreeTimeSlot("afternoon")}
             </div>
@@ -489,18 +760,19 @@ function ItineraryPage() {
                   <div>
                     <h3 className="font-semibold text-gray-900">Evening</h3>
                     <p className="text-sm text-gray-500">
-                      {currentDayPlan.experiences.evening
-                        ? `${currentDayPlan.experiences.evening.timeSlot} • 1 experience`
+                      {isValidExperience(currentDayPlan.experiences.evening)
+                        ? `${currentDayPlan.experiences.evening?.timeSlot} • 1 experience`
                         : "Free time"}
                     </p>
                   </div>
                 </div>
                 <ChevronRight className="w-4 h-4 text-gray-400" />
               </div>
-              {currentDayPlan.experiences.evening
+              {isValidExperience(currentDayPlan.experiences.evening)
                 ? renderExperienceCard(
-                    currentDayPlan.experiences.evening,
-                    "evening"
+                    currentDayPlan.experiences.evening!,
+                    "evening",
+                    currentDayPlan.day
                   )
                 : renderFreeTimeSlot("evening")}
             </div>
@@ -538,25 +810,59 @@ function ItineraryPage() {
         </div>
 
         {/* Total Cost Section */}
-        {itineraryData?.itinerary?.totalCost && (
-          <div className="mt-8 p-4 bg-blue-50 rounded-lg">
-            <h3 className="font-semibold text-gray-900 mb-3">Trip Summary</h3>
-            <div className="space-y-2 text-sm">
-              <div className="flex justify-between">
-                <span className="text-gray-600">Total Cost:</span>
-                <span className="font-medium">
-                  {itineraryData.itinerary.totalCost.total}
-                </span>
+        {(() => {
+          const tripCost = calculateTripCost();
+          return tripCost ? (
+            <div className="mt-8 p-4 bg-blue-50 rounded-lg">
+              <h3 className="font-semibold text-gray-900 mb-3">Trip Summary</h3>
+              <div className="space-y-2 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-gray-600">Original Total:</span>
+                  <span className="text-gray-500 line-through">
+                    {getCurrencySymbol(tripCost.currency)}
+                    {tripCost.originalTotal.toFixed(0)}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-600">Discount (10%):</span>
+                  <span className="text-green-600 font-medium">
+                    -{getCurrencySymbol(tripCost.currency)}
+                    {tripCost.discountAmount.toFixed(0)}
+                  </span>
+                </div>
+                <div className="border-t border-gray-200 pt-2">
+                  <div className="flex justify-between">
+                    <span className="text-gray-900 font-semibold">
+                      Total Cost ({tripCost.totalTravelers} travelers):
+                    </span>
+                    <span className="font-bold text-lg">
+                      {getCurrencySymbol(tripCost.currency)}
+                      {tripCost.discountedTotal.toFixed(0)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between mt-1">
+                    <span className="text-gray-600">Per Person:</span>
+                    <span className="font-medium">
+                      {getCurrencySymbol(tripCost.currency)}
+                      {tripCost.pricePerPerson.toFixed(0)}
+                    </span>
+                  </div>
+                </div>
               </div>
-              <div className="flex justify-between">
-                <span className="text-gray-600">Per Person:</span>
-                <span className="font-medium">
-                  {itineraryData.itinerary.totalCost.perPerson}
-                </span>
+              <div className="mt-3 p-2 bg-green-100 rounded-lg">
+                <div className="flex items-center">
+                  <div className="w-4 h-4 bg-green-500 rounded-full mr-2 flex items-center justify-center">
+                    <span className="text-white text-xs font-bold">%</span>
+                  </div>
+                  <span className="text-green-800 text-sm font-medium">
+                    You saved {getCurrencySymbol(tripCost.currency)}
+                    {tripCost.discountAmount.toFixed(0)} with 10% discount!
+                  </span>
+                </div>
               </div>
             </div>
-          </div>
-        )}
+          ) : null;
+        })()}
 
         {/* Add-ons Section */}
         <div className="mt-8">
@@ -641,6 +947,29 @@ function ItineraryPage() {
             modern adventurers.
           </p>
           <button className="text-xs text-blue-600 mt-2">Learn more</button>
+        </div>
+
+        {/* Add padding to account for sticky button */}
+        <div className="pb-20"></div>
+      </div>
+
+      {/* Sticky Buy Button */}
+      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 p-4 z-50">
+        <div className="max-w-md mx-auto">
+          <button
+            className="w-full py-3 px-4 font-semibold text-base shadow-lg transition-all duration-200 transform hover:scale-[1.02] active:scale-[0.98]"
+            style={{
+              backgroundColor: "#222222",
+              color: "#FFFFFF",
+              borderRadius: "12px",
+            }}
+            onClick={() => {
+              // Handle buy action here
+              alert("Redirecting to booking page...");
+            }}
+          >
+            Buy these experiences at 10% off
+          </button>
         </div>
       </div>
     </div>

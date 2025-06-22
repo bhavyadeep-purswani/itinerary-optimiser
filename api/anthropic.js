@@ -1,25 +1,27 @@
-import express from "express";
-import cors from "cors";
-import fetch from "node-fetch";
-import dotenv from "dotenv";
+export default async function handler(req, res) {
+  // Enable CORS
+  res.setHeader("Access-Control-Allow-Credentials", true);
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader(
+    "Access-Control-Allow-Methods",
+    "GET,OPTIONS,PATCH,DELETE,POST,PUT"
+  );
+  res.setHeader(
+    "Access-Control-Allow-Headers",
+    "X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version"
+  );
 
-// Load environment variables
-dotenv.config();
+  // Handle preflight requests
+  if (req.method === "OPTIONS") {
+    res.status(200).end();
+    return;
+  }
 
-const app = express();
-const PORT = process.env.PORT || 3001;
-// Enable CORS for your frontend
-app.use(
-  cors({
-    origin: "http://localhost:5173", // Vite default port
-    credentials: true,
-  })
-);
+  // Only allow POST requests
+  if (req.method !== "POST") {
+    return res.status(405).json({ error: "Method not allowed" });
+  }
 
-app.use(express.json());
-
-// Anthropic API endpoint with MCP support
-app.post("/api/anthropic", async (req, res) => {
   try {
     const {
       messages,
@@ -27,6 +29,14 @@ app.post("/api/anthropic", async (req, res) => {
       max_tokens = 10000,
       mcp_servers,
     } = req.body;
+
+    const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
+
+    if (!ANTHROPIC_API_KEY) {
+      return res
+        .status(500)
+        .json({ error: "ANTHROPIC_API_KEY not configured" });
+    }
 
     // Build the request body
     const requestBody = {
@@ -40,7 +50,7 @@ app.post("/api/anthropic", async (req, res) => {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "X-API-Key": process.env.ANTHROPIC_API_KEY,
+        "X-API-Key": ANTHROPIC_API_KEY,
         "anthropic-version": "2023-06-01",
         "anthropic-beta": "mcp-client-2025-04-04",
       },
@@ -62,11 +72,4 @@ app.post("/api/anthropic", async (req, res) => {
     console.error("Server error:", error);
     res.status(500).json({ error: "Internal server error" });
   }
-});
-
-app.listen(PORT, () => {
-  console.log(`🚀 Server running on http://localhost:${PORT}`);
-  console.log(
-    `📡 Anthropic proxy available at http://localhost:${PORT}/api/anthropic`
-  );
-});
+}

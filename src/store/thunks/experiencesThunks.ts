@@ -162,14 +162,24 @@ const transformAPIResponseToExperiences = (
 
 export const fetchInventory = async (
   experienceId: string,
-  variantId: number
+  variantId: number,
+  startDate?: string,
+  endDate?: string
 ): Promise<Inventory | null> => {
-  const fromDate = new Date();
-  const toDate = new Date();
-  toDate.setDate(fromDate.getDate() + 7);
+  // Use provided dates or fall back to default 7-day window
+  let fromDateStr: string;
+  let toDateStr: string;
 
-  const fromDateStr = fromDate.toISOString().split("T")[0];
-  const toDateStr = toDate.toISOString().split("T")[0];
+  if (startDate && endDate) {
+    fromDateStr = startDate;
+    toDateStr = endDate;
+  } else {
+    const fromDate = new Date();
+    const toDate = new Date();
+    toDate.setDate(fromDate.getDate() + 7);
+    fromDateStr = fromDate.toISOString().split("T")[0];
+    toDateStr = toDate.toISOString().split("T")[0];
+  }
 
   try {
     const response = await fetch(
@@ -204,7 +214,8 @@ export const fetchInventory = async (
 
 // Thunk to fetch experience by ID
 export const fetchExperienceById =
-  (experienceId: string) => async (dispatch: AppDispatch) => {
+  (experienceId: string, startDate?: string, endDate?: string) =>
+  async (dispatch: AppDispatch) => {
     dispatch(setLoading(true));
     dispatch(setError(null));
 
@@ -226,7 +237,9 @@ export const fetchExperienceById =
         const experience = experiences[0];
         const inventory = await fetchInventory(
           experience.id,
-          experience.selectedVariant
+          experience.selectedVariant,
+          startDate,
+          endDate
         );
         if (inventory) {
           experience.inventory = inventory;
@@ -245,7 +258,8 @@ export const fetchExperienceById =
 
 // Thunk to fetch multiple experiences by IDs
 export const fetchExperiencesByIds =
-  (experienceIds: string[]) => async (dispatch: AppDispatch) => {
+  (experienceIds: string[], startDate?: string, endDate?: string) =>
+  async (dispatch: AppDispatch) => {
     if (!experienceIds || experienceIds.length === 0) {
       dispatch(setError("No experience IDs provided"));
       dispatch(setLoading(false));
@@ -257,7 +271,7 @@ export const fetchExperiencesByIds =
 
     try {
       // Fetch all experiences in parallel
-      const promises = experienceIds.map(async (id, index) => {
+      const promises = experienceIds.map(async (id, _) => {
         try {
           const response = await fetch(
             `https://api-ho.headout.com/api/v6/tour-groups/${id}`
@@ -300,7 +314,9 @@ export const fetchExperiencesByIds =
           if (experience.selectedVariant) {
             const inventory = await fetchInventory(
               experience.id,
-              experience.selectedVariant
+              experience.selectedVariant,
+              startDate,
+              endDate
             );
             if (inventory) {
               return { ...experience, inventory };
