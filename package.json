@@ -8,9 +8,13 @@
     "dev:server": "nodemon server.js",
     "dev:client": "vite",
     "build": "vite build",
+    "build:vercel": "vite build",
     "start": "node server.js",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "vercel-dev": "vercel dev",
+    "deploy:vercel": "vercel --prod",
+    "deploy:render": "echo 'Push to main branch to deploy to Render'"
   },
   "dependencies": {
     "@reduxjs/toolkit": "^2.8.2",
