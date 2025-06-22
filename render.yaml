@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: itinerary-optimiser
+    runtime: node
+    plan: free # Change to 'starter' or higher for production
+    buildCommand: npm ci && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000 # Render uses port 10000 by default
+      - key: ANTHROPIC_API_KEY
+        sync: false # This will be set manually in Render dashboard
+    autoDeploy: true
+    branch: main # Change to your default branch if different

@@ -15,6 +15,11 @@ const app = express();
 const PORT = process.env.PORT || 3001;
 const isDevelopment = process.env.NODE_ENV !== "production";
 
+// Trust proxy for Render deployment
+if (!isDevelopment) {
+  app.set("trust proxy", true);
+}
+
 // Enable CORS - more permissive in development, restricted in production
 if (isDevelopment) {
   app.use(
@@ -33,6 +38,15 @@ app.use(express.json());
 if (!isDevelopment) {
   app.use(express.static(path.join(__dirname, "dist")));
 }
+
+// Health check endpoint for Render
+app.get("/api/health", (req, res) => {
+  res.json({
+    status: "healthy",
+    timestamp: new Date().toISOString(),
+    environment: process.env.NODE_ENV || "development",
+  });
+});
 
 // Anthropic API endpoint with MCP support
 app.post("/api/anthropic", async (req, res) => {
