@@ -14,6 +14,7 @@ import {
   Clock,
 } from "lucide-react";
 import poisData from "../data/pois.json";
+import { anthropicService } from "../services/anthropic";
 
 interface Attraction {
   id: number;
@@ -179,15 +180,39 @@ function PlannerForm() {
   const handleSubmit = async () => {
     if (validateStep(3)) {
       setIsLoading(true);
-      // Simulate API call
-      await new Promise((resolve) => setTimeout(resolve, 2000));
-      setIsLoading(false);
 
-      // Store form data in localStorage to pass to itinerary page
-      localStorage.setItem("itineraryData", JSON.stringify(formData));
+      try {
+        // Generate AI-powered itinerary using Anthropic
+        const attractionNames = formData.attractions.map((a) => a.name);
+        const duration = calculateTripDuration();
+        const totalTravelers = getTotalTravelers();
 
-      // Navigate to itinerary page
-      navigate("/itinerary");
+        const aiItinerary = await anthropicService.generateItinerary(
+          attractionNames,
+          duration,
+          totalTravelers
+        );
+
+        // Store both form data and AI-generated itinerary
+        const dataToStore = {
+          ...formData,
+          aiItinerary,
+          duration,
+          totalTravelers,
+        };
+
+        localStorage.setItem("itineraryData", JSON.stringify(dataToStore));
+
+        // Navigate to itinerary page
+        navigate("/itinerary");
+      } catch (error) {
+        console.error("Failed to generate itinerary:", error);
+        // Fallback: proceed without AI itinerary
+        localStorage.setItem("itineraryData", JSON.stringify(formData));
+        navigate("/itinerary");
+      } finally {
+        setIsLoading(false);
+      }
     }
   };
 
