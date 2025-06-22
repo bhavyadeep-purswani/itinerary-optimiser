@@ -12,7 +12,6 @@ import {
   Loader2,
   Camera,
   Clock,
-  Star,
 } from "lucide-react";
 import poisData from "../data/pois.json";
 
