@@ -7,4 +7,26 @@ export default defineConfig({
   optimizeDeps: {
     include: ["lucide-react"],
   },
+  server: {
+    proxy: {
+      "/api": {
+        target: "http://localhost:3001",
+        changeOrigin: true,
+        secure: false,
+      },
+    },
+  },
+  build: {
+    outDir: "dist",
+    sourcemap: false,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          vendor: ["react", "react-dom"],
+          router: ["react-router-dom"],
+          redux: ["@reduxjs/toolkit", "react-redux"],
+        },
+      },
+    },
+  },
 });
