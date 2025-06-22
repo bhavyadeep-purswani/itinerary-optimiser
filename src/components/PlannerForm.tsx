@@ -66,8 +66,8 @@ function PlannerForm() {
   const [searchTerm, setSearchTerm] = useState("");
   const [errors, setErrors] = useState<Record<string, string>>({});
 
-  // Check for bypass timeout parameter
-  const bypassTimeout = searchParams.get("bypassTimeout") === "true";
+  // Check for demo mode parameter
+  const isDemo = searchParams.get("demo") === "true";
 
   const [formData, setFormData] = useState<FormData>({
     attractions: [],
@@ -203,7 +203,7 @@ function PlannerForm() {
           },
           formData.startDate,
           formData.endDate,
-          bypassTimeout
+          isDemo
         );
 
         console.log(aiItineraryResponse);

@@ -8,7 +8,7 @@
   ],
   "functions": {
     "api/anthropic.js": {
-      "maxDuration": 30
+      "maxDuration": 60
     }
   },
   "env": {

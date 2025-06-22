@@ -46,6 +46,10 @@ export default async function handler(req, res) {
       ...(mcp_servers && { mcp_servers }),
     };
 
+    // Create AbortController with timeout
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 55000); // 55 seconds, leaving 5 seconds buffer
+
     const response = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: {
@@ -55,7 +59,10 @@ export default async function handler(req, res) {
         "anthropic-beta": "mcp-client-2025-04-04",
       },
       body: JSON.stringify(requestBody),
+      signal: controller.signal,
     });
+
+    clearTimeout(timeoutId);
 
     if (!response.ok) {
       const errorData = await response.text();
@@ -69,6 +76,10 @@ export default async function handler(req, res) {
     const data = await response.json();
     res.json(data);
   } catch (error) {
+    if (error.name === "AbortError") {
+      console.error("Request timeout:", error);
+      return res.status(408).json({ error: "Request timeout" });
+    }
     console.error("Server error:", error);
     res.status(500).json({ error: "Internal server error" });
   }

@@ -142,7 +142,7 @@ export const anthropicService = {
   async sendMessage(
     messages: AnthropicMessage[],
     options?: Partial<AnthropicRequest>,
-    bypassTimeout?: boolean
+    isDemo?: boolean
   ): Promise<AnthropicResponse> {
     try {
       const requestBody = {
@@ -156,8 +156,8 @@ export const anthropicService = {
       const abortController = new AbortController();
       let timeoutId: number | null = null;
 
-      // Only set timeout if not bypassing
-      if (!bypassTimeout) {
+      // Only set timeout if in demo mode
+      if (isDemo) {
         timeoutId = setTimeout(() => {
           abortController.abort();
         }, API_TIMEOUT);
@@ -232,7 +232,7 @@ export const anthropicService = {
     },
     startDate: string,
     endDate: string,
-    bypassTimeout?: boolean
+    isDemo?: boolean
   ): Promise<{
     success: boolean;
     itinerary: any;
@@ -408,7 +408,7 @@ traveling from ${startDate} to ${endDate}. They are visiting ${attractions.join(
           ],
         },
         5,
-        bypassTimeout
+        isDemo
       );
 
       // Extract and sanitize JSON from the response
@@ -454,18 +454,14 @@ traveling from ${startDate} to ${endDate}. They are visiting ${attractions.join(
     messages: AnthropicMessage[],
     options?: Partial<AnthropicRequest>,
     maxRetries: number = 5,
-    bypassTimeout?: boolean
+    isDemo?: boolean
   ): Promise<AnthropicResponse> {
     let currentMessages = [...messages];
     let response: AnthropicResponse;
 
     for (let attempt = 0; attempt < maxRetries; attempt++) {
       console.log(`Making API call (attempt ${attempt + 1}/${maxRetries})`);
-      response = await this.sendMessage(
-        currentMessages,
-        options,
-        bypassTimeout
-      );
+      response = await this.sendMessage(currentMessages, options, isDemo);
 
       // If the response doesn't have pause_turn, we're done
       if (response.stop_reason !== "pause_turn") {
