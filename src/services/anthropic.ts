@@ -141,7 +141,8 @@ const BACKUP_ITINERARY = {
 export const anthropicService = {
   async sendMessage(
     messages: AnthropicMessage[],
-    options?: Partial<AnthropicRequest>
+    options?: Partial<AnthropicRequest>,
+    bypassTimeout?: boolean
   ): Promise<AnthropicResponse> {
     try {
       const requestBody = {
@@ -153,9 +154,14 @@ export const anthropicService = {
 
       // Create AbortController for timeout handling
       const abortController = new AbortController();
-      const timeoutId = setTimeout(() => {
-        abortController.abort();
-      }, API_TIMEOUT);
+      let timeoutId: number | null = null;
+
+      // Only set timeout if not bypassing
+      if (!bypassTimeout) {
+        timeoutId = setTimeout(() => {
+          abortController.abort();
+        }, API_TIMEOUT);
+      }
 
       const response = await fetch(`${API_BASE_URL}/api/anthropic`, {
         method: "POST",
@@ -167,7 +173,9 @@ export const anthropicService = {
       });
 
       // Clear timeout if request completed successfully
-      clearTimeout(timeoutId);
+      if (timeoutId !== null) {
+        clearTimeout(timeoutId);
+      }
 
       if (!response.ok) {
         const errorData = await response.json();
@@ -223,7 +231,8 @@ export const anthropicService = {
       seniors: number;
     },
     startDate: string,
-    endDate: string
+    endDate: string,
+    bypassTimeout?: boolean
   ): Promise<{
     success: boolean;
     itinerary: any;
@@ -397,7 +406,9 @@ traveling from ${startDate} to ${endDate}. They are visiting ${attractions.join(
               name: "headout",
             },
           ],
-        }
+        },
+        5,
+        bypassTimeout
       );
 
       // Extract and sanitize JSON from the response
@@ -442,14 +453,19 @@ traveling from ${startDate} to ${endDate}. They are visiting ${attractions.join(
   async handlePauseTurnConversation(
     messages: AnthropicMessage[],
     options?: Partial<AnthropicRequest>,
-    maxRetries: number = 5
+    maxRetries: number = 5,
+    bypassTimeout?: boolean
   ): Promise<AnthropicResponse> {
     let currentMessages = [...messages];
     let response: AnthropicResponse;
 
     for (let attempt = 0; attempt < maxRetries; attempt++) {
       console.log(`Making API call (attempt ${attempt + 1}/${maxRetries})`);
-      response = await this.sendMessage(currentMessages, options);
+      response = await this.sendMessage(
+        currentMessages,
+        options,
+        bypassTimeout
+      );
 
       // If the response doesn't have pause_turn, we're done
       if (response.stop_reason !== "pause_turn") {

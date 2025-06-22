@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   ChevronLeft,
   ChevronRight,
@@ -60,10 +60,14 @@ const transformPOIData = (): Attraction[] => {
 
 function PlannerForm() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [currentStep, setCurrentStep] = useState(1);
   const [isLoading, setIsLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [errors, setErrors] = useState<Record<string, string>>({});
+
+  // Check for bypass timeout parameter
+  const bypassTimeout = searchParams.get("bypassTimeout") === "true";
 
   const [formData, setFormData] = useState<FormData>({
     attractions: [],
@@ -198,7 +202,8 @@ function PlannerForm() {
             seniors: formData.seniors,
           },
           formData.startDate,
-          formData.endDate
+          formData.endDate,
+          bypassTimeout
         );
 
         console.log(aiItineraryResponse);
