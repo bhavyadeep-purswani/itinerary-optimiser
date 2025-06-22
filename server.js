@@ -2,21 +2,37 @@ import express from "express";
 import cors from "cors";
 import fetch from "node-fetch";
 import dotenv from "dotenv";
+import path from "path";
+import { fileURLToPath } from "url";
 
 // Load environment variables
 dotenv.config();
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
 const app = express();
 const PORT = process.env.PORT || 3001;
-// Enable CORS for your frontend
-app.use(
-  cors({
-    origin: "http://localhost:5173", // Vite default port
-    credentials: true,
-  })
-);
+const isDevelopment = process.env.NODE_ENV !== "production";
+
+// Enable CORS - more permissive in development, restricted in production
+if (isDevelopment) {
+  app.use(
+    cors({
+      origin: "http://localhost:5173", // Vite default port
+      credentials: true,
+    })
+  );
+} else {
+  app.use(cors());
+}
 
 app.use(express.json());
+
+// Serve static files in production
+if (!isDevelopment) {
+  app.use(express.static(path.join(__dirname, "dist")));
+}
 
 // Anthropic API endpoint with MCP support
 app.post("/api/anthropic", async (req, res) => {
@@ -64,9 +80,21 @@ app.post("/api/anthropic", async (req, res) => {
   }
 });
 
+// Catch-all handler for React Router (SPA routing)
+if (!isDevelopment) {
+  app.get("*", (req, res) => {
+    res.sendFile(path.join(__dirname, "dist", "index.html"));
+  });
+}
+
 app.listen(PORT, () => {
   console.log(`🚀 Server running on http://localhost:${PORT}`);
   console.log(
     `📡 Anthropic proxy available at http://localhost:${PORT}/api/anthropic`
   );
+  if (isDevelopment) {
+    console.log(`🎨 Frontend dev server: http://localhost:5173`);
+  } else {
+    console.log(`🎨 Frontend served from: http://localhost:${PORT}`);
+  }
 });
